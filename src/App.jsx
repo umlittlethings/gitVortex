@@ -18,12 +18,25 @@ import {
   Maximize2,
   Globe,
   AlertCircle,
-  Info
+  Info,
+  Play,
+  RotateCcw,
+  BookOpenCheck
 } from 'lucide-react';
 import './App.css';
 
-// Import our commit suggester helper
+// Import commit suggester helper
 import { generateCommitSuggestions } from './commitSuggester';
+
+// Import our simulator helpers for the interactive academy
+import { 
+  createInitialSandbox, 
+  gitCommit, 
+  gitBranch, 
+  gitCheckout, 
+  gitMerge, 
+  gitRebase 
+} from './gitSimulator';
 
 function App() {
   // --- Local Repo Path State ---
@@ -53,7 +66,6 @@ function App() {
   const svgContainerRef = useRef(null);
 
   // --- Sidebar & Form Tabs ---
-  // 'ai' = AI Prompt Suggester, 'builder' = Conventional Builder, 'guide' = Quick Guide
   const [activeRightTab, setActiveRightTab] = useState('ai');
   
   // --- AI Suggester Input ---
@@ -70,7 +82,7 @@ function App() {
   // --- Retro Terminal Console ---
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState([
-    { type: 'output', text: '⚡ GitVortex Live Shell v2.0.0 (Monochrome Edition)' },
+    { type: 'output', text: '⚡ GitVortex Live Shell v2.1.0 (Academy Edition)' },
     { type: 'output', text: 'Watching your local repository directory.' },
     { type: 'output', text: 'Type "help" to list available git commands.' }
   ]);
@@ -83,6 +95,77 @@ function App() {
   // --- Notification Toast ---
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
 
+  // --- INTERACTIVE ACADEMY STATE ---
+  const [showAcademyModal, setShowAcademyModal] = useState(false);
+  const [academyState, setAcademyState] = useState(createInitialSandbox());
+  const [academyActiveLesson, setAcademyActiveLesson] = useState(0);
+  const [academyCustomCommand, setAcademyCustomCommand] = useState('');
+  const [academyTerminalLogs, setAcademyTerminalLogs] = useState([
+    { type: 'output', text: '⚡ Academy Sandbox Console Active. Commands execute in simulation.' }
+  ]);
+
+  // Lessons content matrices
+  const academyLessons = [
+    {
+      title: '1. The Git Commit (git commit)',
+      concept: 'A commit is a physical snapshot of your project state. In git, commits form a directed graph where each commit points back to its parent ancestors. Committing stores state without affecting other tracks.',
+      instruction: 'Click "Execute Commit" to simulate spawning a new commit node. Notice that the commit extends from your current active branch pointer.',
+      actionLabel: 'Execute git commit',
+      action: () => {
+        setAcademyState(prev => gitCommit(prev, `feat: add lesson commit ${Math.random().toString(36).substring(2, 6)}`));
+        logAcademy('git commit -m "feat: add lesson commit"', 'output', 'Commit generated in sandbox successfully.');
+      }
+    },
+    {
+      title: '2. Lightweight Branching (git branch)',
+      concept: 'Branches in Git are incredibly lightweight! A branch is simply a named pointer tracking a specific commit hash. Creating a branch does not duplicate code—it just drafts a new tag pointing to HEAD.',
+      instruction: 'Click "Create Branch" to simulate adding a new branch tag named "feature/auth" at your current commit hash.',
+      actionLabel: 'Execute git branch feature/auth',
+      action: () => {
+        setAcademyState(prev => gitBranch(prev, 'feature/auth'));
+        logAcademy('git branch feature/auth', 'output', 'Created local branch feature/auth pointing to current HEAD.');
+      }
+    },
+    {
+      title: '3. Swapping Streams (git checkout)',
+      concept: 'Checkout switches your workspace. HEAD is simply a pointer showing where your active files point. If you checkout a specific commit hash rather than a branch pointer, you enter a "Detached HEAD" state.',
+      instruction: 'Click "Checkout feature/auth" to switch branch pointers, or "Checkout main" to switch back. Watch the HEAD ring node slide instantly on the SVG.',
+      actionLabel: 'Execute git checkout feature/auth',
+      action: () => {
+        setAcademyState(prev => gitCheckout(prev, 'feature/auth'));
+        logAcademy('git checkout feature/auth', 'output', 'Switched sandbox context to branch "feature/auth"');
+      }
+    },
+    {
+      title: '4. Preserving Context (git merge)',
+      concept: 'Merging integrates separate branch developments. If the target branch is a direct ancestor of the current branch, git runs a fast-forward merge (moving the pointer). Otherwise, it makes a "3-Way Merge Commit" joining both parent histories.',
+      instruction: 'Checkout "main" and click "Merge" to combine changes, making a beautiful curved junction in the visualizer.',
+      actionLabel: 'Execute git merge feature/dashboard',
+      action: () => {
+        setAcademyState(prev => gitMerge(prev, 'feature/dashboard'));
+        logAcademy('git merge feature/dashboard', 'output', 'Merged sandbox branch. Merge commit created with multiple parent connections.');
+      }
+    },
+    {
+      title: '5. Linear History Rebase (git rebase)',
+      concept: 'Rebasing is the most elegant alternative to merges. Instead of creating a messy merge commit, rebasing temporarily holds your unique branch commits, shifts the base of your branch to the target branch HEAD, and replays each of your commits one-by-one as new commits.',
+      instruction: 'Switch to "feature/dashboard" and click "Rebase main" to watch your commits detach and re-append linearly on top of main, creating a perfectly clean straight timeline!',
+      actionLabel: 'Execute git rebase main',
+      action: () => {
+        setAcademyState(prev => gitRebase(prev, 'main'));
+        logAcademy('git rebase main', 'output', 'Rebase complete. Unique commits replayed linearly on top of master.');
+      }
+    }
+  ];
+
+  const logAcademy = (cmdText, outType, outText) => {
+    setAcademyTerminalLogs(prev => [
+      ...prev,
+      { type: 'command', text: cmdText },
+      { type: outType, text: outText }
+    ]);
+  };
+
   // ----------------------------------------------------
   // EFFECT: Fetch Local Repo Info on mount/path change
   // ----------------------------------------------------
@@ -90,7 +173,7 @@ function App() {
     fetchLocalRepoData();
     const interval = setInterval(() => {
       fetchLocalRepoData(true);
-    }, 4000); // Poll every 4s for real-time local file updates
+    }, 4000); 
     return () => clearInterval(interval);
   }, [repoPath]);
 
@@ -110,7 +193,6 @@ function App() {
       const res = await fetch(`/api/git/info?repoPath=${encodeURIComponent(repoPath)}`);
       const data = await res.json();
       
-      // Fallback object initialization to absolutely prevent undefined maps
       setLocalRepoInfo({
         isValid: data?.isValid ?? false,
         activeBranch: data?.activeBranch ?? '',
@@ -144,7 +226,6 @@ function App() {
     }, 4000);
   };
 
-  // Helper to execute git command on local backend
   const runLocalCommand = async (action, params = {}) => {
     try {
       const res = await fetch('/api/git/command', {
@@ -175,7 +256,6 @@ function App() {
     return localRepoInfo?.activeBranch || 'main';
   }, [localRepoInfo]);
 
-  // Separate local and remote branches
   const localBranchesList = useMemo(() => {
     return currentBranches.filter(b => !b.isRemote);
   }, [currentBranches]);
@@ -205,7 +285,6 @@ function App() {
       }
     });
 
-    // Active branch gets Column 0 (center focus), then local branches, then remotes
     const sortedBranches = Array.from(allUniqueBranches).sort((a, b) => {
       const aObj = branches.find(br => br.name === a);
       const bObj = branches.find(br => br.name === b);
@@ -225,7 +304,7 @@ function App() {
     // Sizing offsets
     const startY = 80;
     const spacingY = 70;
-    const spacingX = 75; // Wider for ultra-clean spacing
+    const spacingX = 75;
     const startX = 60;
 
     // 2. Map nodes
@@ -235,7 +314,6 @@ function App() {
         const matchingBranch = commit.branches.find(b => branchLanes[b] !== undefined);
         if (matchingBranch) lane = branchLanes[matchingBranch];
       } else {
-        // Fallback trace to parent column
         lane = 0;
       }
 
@@ -282,6 +360,75 @@ function App() {
       height: Math.max(totalHeight, 400)
     };
   }, [currentGitTree, currentBranches, activeBranchName]);
+
+  // ----------------------------------------------------
+  // ACADEMY SIMULATOR COORDINATES ENGINE
+  // ----------------------------------------------------
+  const academyLayout = useMemo(() => {
+    const commits = Object.values(academyState.commits);
+    const branches = Object.keys(academyState.branches).map(name => ({
+      name,
+      commitHash: academyState.branches[name]
+    }));
+
+    if (commits.length === 0) return { nodes: [], paths: [], height: 200 };
+
+    const branchLanes = {};
+    let laneCounter = 0;
+
+    // Put main always first, then feature/dashboard, then other branches
+    const sortedBranches = ['main', 'feature/dashboard'];
+    Object.keys(academyState.branches).forEach(b => {
+      if (!sortedBranches.includes(b)) sortedBranches.push(b);
+    });
+
+    sortedBranches.forEach(b => {
+      branchLanes[b] = laneCounter++;
+    });
+
+    const startY = 40;
+    const spacingY = 52;
+    const spacingX = 65;
+    const startX = 50;
+
+    const nodes = commits.sort((a, b) => new Date(a.date) - new Date(b.date)).map((commit, idx) => {
+      const lane = branchLanes[commit.branch] ?? 0;
+      const x = startX + lane * spacingX;
+      const y = startY + idx * spacingY;
+      return {
+        ...commit,
+        x,
+        y,
+        lane
+      };
+    });
+
+    const paths = [];
+    nodes.forEach(node => {
+      if (node.parents) {
+        node.parents.forEach(parentHash => {
+          const parentNode = nodes.find(n => n.hash === parentHash);
+          if (parentNode) {
+            paths.push({
+              id: `${node.hash}-${parentNode.hash}`,
+              fromX: parentNode.x,
+              fromY: parentNode.y,
+              toX: node.x,
+              toY: node.y,
+              lane: parentNode.lane,
+              isMerge: node.parents.length > 1
+            });
+          }
+        });
+      }
+    });
+
+    return {
+      nodes,
+      paths,
+      height: Math.max(startY + commits.length * spacingY + 30, 300)
+    };
+  }, [academyState]);
 
   // ----------------------------------------------------
   // EVENT: Draggable SVG Tree Handlers
@@ -333,7 +480,6 @@ function App() {
     return () => clearTimeout(delayDebounce);
   }, [userPrompt]);
 
-  // Real changes analyzer
   const handleAnalyzeRealDiff = async () => {
     setLoadingLocal(true);
     try {
@@ -360,7 +506,6 @@ function App() {
     }
   };
 
-  // Apply Git staging & Commit
   const handleApplyCommit = async (message) => {
     if (!message || message.trim() === '') {
       showToast('Commit message is empty', 'error');
@@ -368,7 +513,6 @@ function App() {
     }
 
     setLoadingLocal(true);
-    // 1. Stage all
     const addRes = await runLocalCommand('add', { file: '.' });
     if (!addRes.success) {
       showToast(`Add failed: ${addRes.error}`, 'error');
@@ -376,7 +520,6 @@ function App() {
       return;
     }
 
-    // 2. Commit
     const commitRes = await runLocalCommand('commit', { message });
     if (commitRes.success) {
       setTerminalLogs(prev => [
@@ -403,9 +546,6 @@ function App() {
     showToast('Copied to clipboard!', 'success');
   };
 
-  // ----------------------------------------------------
-  // step builder state calculation
-  // ----------------------------------------------------
   const conventionalPreview = useMemo(() => {
     const scopeStr = builderScope.trim() ? `(${builderScope.trim().toLowerCase()})` : '';
     const breakStr = builderBreaking ? '!' : '';
@@ -525,6 +665,71 @@ function App() {
       showToast(`Failed to load diff: ${e.message}`, 'error');
     } finally {
       setLoadingLocal(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // ACADEMY SIMULATION INPUT EXECUTION
+  // ----------------------------------------------------
+  const handleAcademyCustomSubmit = (e) => {
+    e.preventDefault();
+    if (!academyCustomCommand.trim()) return;
+
+    const fullCmd = academyCustomCommand.trim();
+    setAcademyCustomCommand('');
+
+    const args = fullCmd.split(/\s+/);
+    if (args[0] !== 'git') {
+      setAcademyTerminalLogs(prev => [...prev, { type: 'command', text: fullCmd }, { type: 'error', text: `command not found: ${args[0]}. Try: git commit, git branch <name>, git checkout <name>` }]);
+      return;
+    }
+
+    const action = args[1];
+    if (action === 'commit') {
+      setAcademyState(prev => gitCommit(prev, args[2] ? args.slice(2).join(' ').replace(/['"]/g, '') : 'simulated development commit'));
+      logAcademy(fullCmd, 'output', 'Simulated commit spawned successfully.');
+    } else if (action === 'branch') {
+      if (!args[2]) {
+        logAcademy(fullCmd, 'error', 'Branch name parameter required.');
+        return;
+      }
+      setAcademyState(prev => gitBranch(prev, args[2]));
+      logAcademy(fullCmd, 'output', `Simulated branch "${args[2]}" created at HEAD.`);
+    } else if (action === 'checkout') {
+      if (!args[2]) {
+        logAcademy(fullCmd, 'error', 'Checkout target parameter required.');
+        return;
+      }
+      setAcademyState(prev => gitCheckout(prev, args[2]));
+      logAcademy(fullCmd, 'output', `Switched workspace active HEAD to "${args[2]}".`);
+    } else if (action === 'merge') {
+      if (!args[2]) {
+        logAcademy(fullCmd, 'error', 'Merge branch parameter required.');
+        return;
+      }
+      const prev = academyState;
+      const next = gitMerge(prev, args[2]);
+      if (next.error) {
+        logAcademy(fullCmd, 'error', next.error);
+      } else {
+        setAcademyState(next);
+        logAcademy(fullCmd, 'output', next.message || 'Merged successfully.');
+      }
+    } else if (action === 'rebase') {
+      if (!args[2]) {
+        logAcademy(fullCmd, 'error', 'Rebase target parameter required.');
+        return;
+      }
+      const prev = academyState;
+      const next = gitRebase(prev, args[2]);
+      if (next.error) {
+        logAcademy(fullCmd, 'error', next.error);
+      } else {
+        setAcademyState(next);
+        logAcademy(fullCmd, 'output', next.message || 'Rebase complete.');
+      }
+    } else {
+      logAcademy(fullCmd, 'error', `Academy sandbox: Unsupported command "${action}". Supported: commit, branch, checkout, merge, rebase.`);
     }
   };
 
@@ -704,7 +909,7 @@ function App() {
             </button>
           </div>
           
-          <div className="panel-content" style={{ maxHeight: '40%', overflowY: 'auto' }}>
+          <div className="panel-content" style={{ maxHeight: '25%', overflowY: 'auto' }}>
             <div className="branch-list">
               {localBranchesList.map((br) => (
                 <div 
@@ -733,7 +938,7 @@ function App() {
             </div>
           </div>
           
-          <div className="panel-content" style={{ maxHeight: '30%', overflowY: 'auto' }}>
+          <div className="panel-content" style={{ maxHeight: '20%', overflowY: 'auto' }}>
             <div className="branch-list">
               {remoteBranchesList.map((br) => (
                 <div 
@@ -770,7 +975,7 @@ function App() {
             )}
           </div>
 
-          <div className="panel-content" style={{ overflowY: 'auto' }}>
+          <div className="panel-content" style={{ overflowY: 'auto', maxHeight: '25%' }}>
             {(!localRepoInfo?.files || localRepoInfo.files.length === 0) ? (
               <div className="empty-state-mono">
                 <CheckCircle2 size={18} />
@@ -803,6 +1008,104 @@ function App() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Section D: Git Operations */}
+          <div className="panel-header" style={{ borderTop: '1px solid var(--border-light)' }}>
+            <div className="panel-title">
+              <Zap size={14} />
+              <span>Git Quick Actions</span>
+            </div>
+          </div>
+          
+          <div className="panel-content" style={{ overflowY: 'auto', flex: 1 }}>
+            {localBranchesList.length > 1 ? (
+              <div className="builder-form" style={{ gap: 8 }}>
+                <div className="input-group" style={{ marginBottom: 4 }}>
+                  <label className="input-label" style={{ fontSize: 9 }}>Select Branch for actions</label>
+                  <select 
+                    className="select-custom" 
+                    id="git-op-branch"
+                    style={{ fontSize: 11, padding: 4 }}
+                  >
+                    {localBranchesList.filter(b => !b.isActive).map(b => (
+                      <option key={b.name} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ flex: 1, padding: '4px 8px', fontSize: 10 }}
+                    onClick={() => {
+                      const sel = document.getElementById('git-op-branch')?.value;
+                      if (sel) handleQuickMerge(sel);
+                    }}
+                  >
+                    Merge
+                  </button>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ flex: 1, padding: '4px 8px', fontSize: 10 }}
+                    onClick={() => {
+                      const sel = document.getElementById('git-op-branch')?.value;
+                      if (sel) handleQuickRebase(sel);
+                    }}
+                  >
+                    Rebase
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state-mono" style={{ fontSize: 10.5, padding: 8, marginBottom: 8 }}>
+                Create another branch to enable Quick Merge/Rebase.
+              </div>
+            )}
+            
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button 
+                className="btn-secondary" 
+                style={{ flex: 1, padding: '4px 8px', fontSize: 10, color: 'var(--text-muted)' }}
+                onClick={async () => {
+                  const res = await runLocalCommand('raw', { command: 'git stash' });
+                  if (res.success) {
+                    showToast('Changes stashed!', 'success');
+                    setTerminalLogs(prev => [...prev, { type: 'command', text: 'git stash' }, { type: 'output', text: res.stdout || 'Saved working directory changes.' }]);
+                  }
+                }}
+              >
+                Stash
+              </button>
+              <button 
+                className="btn-secondary" 
+                style={{ flex: 1, padding: '4px 8px', fontSize: 10, color: 'var(--text-muted)' }}
+                onClick={async () => {
+                  const res = await runLocalCommand('raw', { command: 'git stash pop' });
+                  if (res.success) {
+                    showToast('Stash popped!', 'success');
+                    setTerminalLogs(prev => [...prev, { type: 'command', text: 'git stash pop' }, { type: 'output', text: res.stdout || 'Popped stashed commits.' }]);
+                  }
+                }}
+              >
+                Unstash
+              </button>
+            </div>
+
+            <button 
+              className="btn-secondary" 
+              style={{ width: '100%', padding: '4px 8px', fontSize: 10, marginTop: 6, color: 'var(--text-muted)', borderColor: '#525252' }}
+              onClick={async () => {
+                if (window.confirm('Are you sure you want to run hard reset? Uncommitted changes will be lost.')) {
+                  const res = await runLocalCommand('reset-hard');
+                  if (res.success) {
+                    showToast('HEAD reset successfully', 'success');
+                    setTerminalLogs(prev => [...prev, { type: 'command', text: 'git reset --hard HEAD' }, { type: 'output', text: 'HEAD is now at newest commit.' }]);
+                  }
+                }
+              }}
+            >
+              Reset Hard HEAD
+            </button>
           </div>
         </aside>
 
@@ -1173,26 +1476,44 @@ function App() {
             {/* TAB 3: Guide */}
             {activeRightTab === 'guide' && (
               <div className="guide-section">
-                <div className="status-header">Git Cheat Sheet</div>
+                
+                {/* Visual Academy Activation Block */}
+                <div style={{ background: '#070707', border: '1px solid #ffffff', padding: 12, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <BookOpenCheck size={14} style={{ color: '#ffffff' }} />
+                    <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>GIT VISUAL ACADEMY</span>
+                  </div>
+                  <p style={{ fontSize: 10.5, color: 'var(--text-muted)', lineHeight: 1.3, marginBottom: 10 }}>
+                    Understand merges, branching topologies, and commit rebasing interactively inside our animated sandbox workspace!
+                  </p>
+                  <button 
+                    className="btn-primary" 
+                    style={{ width: '100%', padding: '6px 10px', fontSize: 10.5 }}
+                    onClick={() => {
+                      setAcademyState(createInitialSandbox());
+                      setAcademyActiveLesson(0);
+                      setShowAcademyModal(true);
+                    }}
+                  >
+                    🎓 Open Git Academy
+                  </button>
+                </div>
+
+                <div className="status-header">Git Command Reference</div>
                 
                 <div className="guide-card">
-                  <div className="guide-cmd">git commit -m "message"</div>
-                  <div className="guide-desc">Commits staged modifications. Adding prefixes like <code>feat:</code> fits conventional standards.</div>
-                </div>
-
-                <div className="guide-card">
-                  <div className="guide-cmd">git branch &lt;name&gt;</div>
-                  <div className="guide-desc">Creates a branch tracking off current HEAD commit.</div>
-                </div>
-
-                <div className="guide-card">
-                  <div className="guide-cmd">git checkout &lt;name&gt;</div>
-                  <div className="guide-desc">Switches local workspace active head ref pointer.</div>
+                  <div className="guide-cmd">git rebase &lt;branch&gt;</div>
+                  <div className="guide-desc">Temporarily holds local branch commits, shifts branch base, and replays each of them linearly on top of target branch HEAD.</div>
                 </div>
 
                 <div className="guide-card">
                   <div className="guide-cmd">git merge &lt;branch&gt;</div>
-                  <div className="guide-desc">Merges branch commit states into current active HEAD.</div>
+                  <div className="guide-desc">Combines branch logs. Standard merging creates a new visual '3-way merge commit' with multiple parent connections.</div>
+                </div>
+
+                <div className="guide-card">
+                  <div className="guide-cmd">git stash</div>
+                  <div className="guide-desc">Safely stashes uncommitted modifications, leaving the working directory clean without committing.</div>
                 </div>
               </div>
             )}
@@ -1322,6 +1643,207 @@ function App() {
                   {activeDiffFile.isStaged ? 'Unstage' : 'Stage'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- INTERACTIVE GIT VISUAL ACADEMY OVERLAY MODAL --- */}
+      {showAcademyModal && (
+        <div className="modal-overlay" onClick={() => setShowAcademyModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: 1080, height: '80vh', maxWidth: '95%' }}>
+            
+            {/* Modal Header */}
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <BookOpenCheck size={18} />
+                <span className="modal-title" style={{ fontSize: 14 }}>Git Visual Academy & Playground Sandbox</span>
+              </div>
+              <button className="modal-close-btn" onClick={() => setShowAcademyModal(false)}>&times;</button>
+            </div>
+
+            {/* Modal Body Container */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', background: '#000000' }}>
+              
+              {/* Left Panel: Lessons list & selectors */}
+              <div style={{ width: 320, borderRight: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', background: '#050505', overflowY: 'auto' }}>
+                <div style={{ padding: '12px 16px', background: '#0c0c0c', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: 0.5 }}>Simulated Course Tasks</span>
+                  <button 
+                    className="canvas-btn" 
+                    title="Reset Simulation Repository"
+                    style={{ width: 22, height: 22 }}
+                    onClick={() => {
+                      setAcademyState(createInitialSandbox());
+                      setAcademyActiveLesson(0);
+                      setAcademyTerminalLogs([{ type: 'output', text: '⚡ Academy Sandbox Repository Reset.' }]);
+                    }}
+                  >
+                    <RotateCcw size={11} />
+                  </button>
+                </div>
+
+                {/* Lesson Navigation items */}
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {academyLessons.map((les, idx) => (
+                    <div 
+                      key={idx}
+                      onClick={() => setAcademyActiveLesson(idx)}
+                      style={{ 
+                        padding: 10,
+                        border: '1px solid',
+                        borderColor: academyActiveLesson === idx ? '#ffffff' : 'var(--border-light)',
+                        background: academyActiveLesson === idx ? 'rgba(255, 255, 255, 0.03)' : 'transparent',
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                    >
+                      <h4 style={{ fontSize: 11.5, fontWeight: 700, color: academyActiveLesson === idx ? '#ffffff' : 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        {les.title}
+                      </h4>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Selected Lesson Explainer */}
+                <div style={{ padding: 16, borderTop: '1px solid var(--border-light)', flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <span className="input-label" style={{ fontSize: 9 }}>The Concept</span>
+                    <p style={{ fontSize: 11.5, color: '#ffffff', lineHeight: 1.4, marginTop: 4 }}>
+                      {academyLessons[academyActiveLesson].concept}
+                    </p>
+                  </div>
+
+                  <div style={{ background: '#0e0e0e', padding: 10, borderLeft: '2px solid #ffffff' }}>
+                    <span className="input-label" style={{ fontSize: 8.5 }}>Task Instructions</span>
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.3, marginTop: 2 }}>
+                      {academyLessons[academyActiveLesson].instruction}
+                    </p>
+                  </div>
+
+                  <button 
+                    className="btn-primary" 
+                    style={{ width: '100%', padding: '8px 12px', fontSize: 11, marginTop: 'auto' }}
+                    onClick={academyLessons[academyActiveLesson].action}
+                  >
+                    <Play size={11} />
+                    {academyLessons[academyActiveLesson].actionLabel}
+                  </button>
+                </div>
+              </div>
+
+              {/* Middle Section: Visualizer Sandbox Tree */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.8)', border: '1px solid var(--border-light)', padding: '4px 10px', fontSize: 9.5, fontFamily: 'var(--font-mono)', zIndex: 10 }}>
+                  ACTIVE HEAD: <span style={{ color: '#ffffff', fontWeight: 'bold' }}>{academyState.activeBranch}</span>
+                </div>
+
+                {/* SVG Visual Canvas for Simulation */}
+                <div style={{ flex: 1, cursor: 'grab', background: '#020202', overflow: 'hidden' }}>
+                  <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+                    <defs>
+                      <marker 
+                        id="arrow-academy" 
+                        viewBox="0 0 10 10" 
+                        refX="6" 
+                        refY="5" 
+                        markerWidth="6" 
+                        markerHeight="6" 
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 2 L 10 5 L 0 8 z" fill="#737373" />
+                      </marker>
+                    </defs>
+
+                    <g transform="translate(60, 40) scale(0.9)">
+                      {/* Paths */}
+                      {academyLayout.paths.map((path) => {
+                        const dy = path.toY - path.fromY;
+                        const curvePath = `M ${path.fromX} ${path.fromY} C ${path.fromX} ${path.fromY + dy/2}, ${path.toX} ${path.fromY + dy/2}, ${path.toX} ${path.toY}`;
+                        return (
+                          <path 
+                            key={path.id}
+                            d={curvePath}
+                            fill="none"
+                            stroke={path.isMerge ? '#444' : '#888'}
+                            strokeWidth="2"
+                            strokeDasharray={path.isMerge ? '3,3' : undefined}
+                            markerStart={path.fromY > path.toY ? "url(#arrow-academy)" : undefined}
+                            opacity={path.isMerge ? 0.4 : 0.8}
+                          />
+                        );
+                      })}
+
+                      {/* Nodes */}
+                      {academyLayout.nodes.map((node) => {
+                        const isHead = academyState.headCommit === node.hash;
+                        const pointingBranches = Object.keys(academyState.branches).filter(bName => academyState.branches[bName] === node.hash);
+
+                        return (
+                          <g 
+                            key={node.hash}
+                            transform={`translate(${node.x}, ${node.y})`}
+                            onClick={() => {
+                              setAcademyState(prev => gitCheckout(prev, node.hash));
+                              logAcademy(`git checkout ${node.hash.substring(0, 8)}`, 'output', `Checked out simulated commit ${node.hash.substring(0, 8)} (detached HEAD)`);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {isHead && (
+                              <circle r="10" fill="none" stroke="#ffffff" strokeWidth="2" opacity="0.8" />
+                            )}
+                            <circle r="5" fill={isHead ? '#ffffff' : '#000000'} stroke="#ffffff" strokeWidth="2" />
+                            
+                            <text x="14" y="3" style={{ fill: '#ffffff', fontSize: 10.5, fontFamily: 'var(--font-sans)', fontWeight: 600, pointerEvents: 'none' }}>
+                              {node.message}
+                            </text>
+                            
+                            <text x="14" y="13" style={{ fill: 'var(--text-dim)', fontSize: 9.5, fontFamily: 'var(--font-mono)', pointerEvents: 'none' }}>
+                              {node.hash.substring(0, 8)}
+                            </text>
+
+                            {/* Simulated branch refs tags */}
+                            {pointingBranches.map((brName, bIdx) => (
+                              <g key={brName} transform={`translate(${230 + bIdx * 82}, -6)`}>
+                                <rect width="78" height="16" rx="2" fill={brName === academyState.activeBranch ? '#ffffff' : '#171717'} stroke="#ffffff" strokeWidth="1" />
+                                <text x="39" y="11" textAnchor="middle" fill={brName === academyState.activeBranch ? '#000000' : '#ffffff'} style={{ fontSize: 8.5, fontFamily: 'var(--font-mono)', fontWeight: 'bold' }}>
+                                  {brName.length > 11 ? `${brName.substring(0, 9)}..` : brName}
+                                </text>
+                              </g>
+                            ))}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  </svg>
+                </div>
+
+                {/* Retro simulated sub-console */}
+                <div style={{ height: 160, borderTop: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', background: '#000000', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                  <div style={{ background: '#0a0a0a', padding: '4px 12px', borderBottom: '1px solid var(--border-light)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                    Interactive Sandbox Console (Type Custom Actions Here)
+                  </div>
+                  <div style={{ flex: 1, padding: 10, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {academyTerminalLogs.map((log, idx) => (
+                      <div key={idx} style={{ display: 'flex', color: log.type === 'command' ? '#ffffff' : log.type === 'error' ? '#888888' : 'var(--text-muted)' }}>
+                        {log.type === 'command' && <span style={{ marginRight: 6 }}>&gt;</span>}
+                        <span>{log.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <form onSubmit={handleAcademyCustomSubmit} style={{ display: 'flex', padding: '6px 12px', background: '#050505', borderTop: '1px solid var(--border-light)', alignItems: 'center' }}>
+                    <span style={{ color: '#ffffff', marginRight: 6 }}>&gt;</span>
+                    <input 
+                      type="text" 
+                      style={{ flex: 1, background: 'transparent', border: 'none', color: '#ffffff', outline: 'none', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                      placeholder="Try: git commit, git branch <name>, git checkout <name>, git merge <branch>, git rebase <branch>"
+                      value={academyCustomCommand}
+                      onChange={e => setAcademyCustomCommand(e.target.value)}
+                    />
+                  </form>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
